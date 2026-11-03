@@ -44,36 +44,38 @@ module io_bus (
     input  wire        periph_ready
 );
 
-    // Safe placeholder: no peripheral ever finishes (io_ready stays low
-    // forever), so this compiles and lints clean but will hang the CPU
-    // the first time it is used. Implement the decode + handshake per
-    // Section 7.1 before wiring this into dsd8_top or tb_dsd8.v.
+    wire is_periph = (io_port >= 8'h20);
 
-    assign io_rdata     = 8'h00;
-    assign io_ready      = 1'b0;
     assign periph_port  = io_port;
     assign periph_wdata = io_wdata;
-    assign periph_rd    = 1'b0;
-    assign periph_wr    = 1'b0;
+    assign periph_rd    = io_rd && is_periph;
+    assign periph_wr    = io_wr && is_periph;
+
+    reg [7:0] local_rdata;
+    always @(*) begin
+        case (io_port)
+            8'h00:   local_rdata = switches;
+            8'h01:   local_rdata = {3'b000, buttons};
+            default: local_rdata = 8'h00;
+        endcase
+    end
+
+    assign io_rdata = is_periph ? periph_rdata : local_rdata;
+    assign io_ready = is_periph ? periph_ready : 1'b1;
 
     always @(posedge clk) begin
         if (!rst_n) begin
             leds       <= 8'h00;
             seg_value  <= 8'h00;
             seg_enable <= 8'h00;
-        end else begin
-            // TODO: decode io_port/io_wr and update leds/seg_value/seg_enable
-            leds       <= leds;
-            seg_value  <= seg_value;
-            seg_enable <= seg_enable;
+        end else if (io_wr) begin
+            case (io_port)
+                8'h02: leds       <= io_wdata;
+                8'h10: seg_value  <= io_wdata;
+                8'h11: seg_enable <= io_wdata;
+                default: ;
+            endcase
         end
     end
-
-    // verilator lint_off UNUSEDSIGNAL
-    wire [7:0] unused_switches   = switches;
-    wire [4:0] unused_buttons    = buttons;
-    wire [7:0] unused_periph_rd  = periph_rdata;
-    wire       unused_periph_rdy = periph_ready;
-    // verilator lint_on UNUSEDSIGNAL
 
 endmodule

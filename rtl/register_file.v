@@ -36,20 +36,13 @@ module register_file (
                 regs[i] <= 8'h00;
             end
         end else begin
-            // TODO: if (we) regs[wa] <= wd;
+            if (we) begin
+                regs[wa] <= wd;
+            end
         end
     end
 
-    // TODO: assign rd1 = regs[ra1]; assign rd2 = regs[ra2];
-    assign rd1 = 8'h00;
-    assign rd2 = 8'h00;
-
-    // verilator lint_off UNUSEDSIGNAL
-    wire [2:0] unused_ra1 = ra1;
-    wire [2:0] unused_ra2 = ra2;
-    wire [2:0] unused_wa  = wa;
-    wire [7:0] unused_wd  = wd;
-    wire       unused_we  = we;
-    // verilator lint_on UNUSEDSIGNAL
+    assign rd1 = regs[ra1];
+    assign rd2 = regs[ra2];
 
 endmodule

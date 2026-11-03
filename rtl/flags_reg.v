@@ -19,9 +19,8 @@ module flags_reg (
     always @(posedge clk) begin
         if (!rst_n) begin
             flags_out <= 4'b0000;
-        end else begin
-            // TODO: if (flags_we) flags_out <= flags_in;
-            flags_out <= flags_out;
+        end else if (flags_we) begin
+            flags_out <= flags_in;
         end
     end
 

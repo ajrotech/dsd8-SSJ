@@ -27,8 +27,8 @@ module prog_counter (
     always @(posedge clk) begin
         if (!rst_n) begin
             pc <= 9'h000;
-        end else begin
-            pc <= pc;   // TODO: implement pc_en / pc_load / increment per Section 2.5
+        end else if (pc_en) begin
+            pc <= pc_load ? branch_addr : (pc + 9'd1);
         end
     end
 
