@@ -1,6 +1,6 @@
 // debug_controller.v -- lightweight built-in CPU debugger controller
 // Supports disabled, running, paused, single-step, and PC breakpoint states.
-// Gates dsd8_cpu.io_ready non-intrusively and provides shadow register inspection.
+// Controls instruction issue and provides shadow register inspection.
 
 `timescale 1ns/1ps
 
@@ -21,8 +21,6 @@ module debug_controller (
     input  wire [15:0] imem_data,       // Current IR being fetched
     input  wire        cpu_halted,      // CPU halted output
     input  wire        retire,          // CPU retire strobe
-    input  wire [8:0]  retire_pc,
-    input  wire [15:0] retire_ir,
     input  wire        retire_rf_we,
     input  wire [2:0]  retire_rf_addr,
     input  wire [7:0]  retire_rf_data,
@@ -30,6 +28,8 @@ module debug_controller (
 
     // ---- CPU Stall Control (gates io_ready) ----
     input  wire        bus_io_ready,    // Normal io_ready from io_bus
+    input  wire        io_pending,      // Previously issued I/O must finish
+    output wire        cpu_enable,      // Enable CPU issue and qualify bus requests
     output wire        cpu_io_ready,    // Gated io_ready delivered to dsd8_cpu
 
     // ---- Status Indicators ----
@@ -50,16 +50,18 @@ module debug_controller (
     localparam STATE_BP_HIT   = 3'b100;
 
     reg [2:0] state;
+    reg       pause_pending;
     reg       step_resume; // 1 = stepping over breakpoint before returning to running
 
     assign debug_state = state;
     assign dbg_paused  = (state == STATE_PAUSED) || (state == STATE_BP_HIT);
 
-    // ---- io_ready Gating ----
-    // When debug_en is 0, bus_io_ready passes through with zero modification.
-    // When debug_en is 1, CPU is allowed to advance only in RUNNING and STEP states.
-    assign cpu_io_ready = (!debug_en) ? bus_io_ready :
-                          ((state == STATE_RUNNING || state == STATE_STEP) ? bus_io_ready : 1'b0);
+    // Stop before an instruction can issue. A previously accepted request
+    // remains asserted until ready, so a pause cannot interrupt a transfer.
+    wire breakpoint_match = bp_en && (imem_addr == bp_pc);
+    assign cpu_enable = io_pending || !debug_en || (state == STATE_STEP) ||
+                        (state == STATE_RUNNING && !cmd_pause && !pause_pending && !breakpoint_match);
+    assign cpu_io_ready = cpu_enable && bus_io_ready;
 
     // ---- FSM State Transitions ----
     always @(posedge clk) begin
@@ -67,15 +69,17 @@ module debug_controller (
             state       <= STATE_DISABLED;
             dbg_bp_hit  <= 1'b0;
             step_resume <= 1'b0;
+            pause_pending <= 1'b0;
         end else if (!debug_en) begin
             state       <= STATE_DISABLED;
             dbg_bp_hit  <= 1'b0;
             step_resume <= 1'b0;
+            pause_pending <= 1'b0;
         end else begin
             case (state)
                 STATE_DISABLED: begin
-                    // debug_en asserted: enter paused state
-                    state      <= STATE_PAUSED;
+                    // Attaching during I/O pauses only after that transfer.
+                    if (!io_pending || retire) state <= STATE_PAUSED;
                     dbg_bp_hit <= 1'b0;
                 end
 
@@ -89,8 +93,9 @@ module debug_controller (
                 end
 
                 STATE_STEP: begin
+                    if (cmd_pause) step_resume <= 1'b0;
                     if (retire || cpu_halted) begin
-                        if (step_resume) begin
+                        if (step_resume && !cmd_pause) begin
                             step_resume <= 1'b0;
                             state       <= STATE_RUNNING;
                         end else begin
@@ -100,9 +105,14 @@ module debug_controller (
                 end
 
                 STATE_RUNNING: begin
-                    if (cmd_pause || cpu_halted) begin
+                    if (cmd_pause && io_pending && !retire) begin
+                        pause_pending <= 1'b1;
+                    end
+                    if ((cmd_pause || pause_pending || cpu_halted) &&
+                        (!io_pending || retire)) begin
                         state <= STATE_PAUSED;
-                    end else if (bp_en && (imem_addr == bp_pc)) begin
+                        pause_pending <= 1'b0;
+                    end else if (breakpoint_match && !io_pending) begin
                         state      <= STATE_BP_HIT;
                         dbg_bp_hit <= 1'b1;
                     end
@@ -151,8 +161,6 @@ module debug_controller (
             4'hA: inspect_data = imem_data[7:0];
             4'hB: inspect_data = imem_data[15:8];
             4'hC: inspect_data = {4'b0000, retire_flags};
-            4'hD: inspect_data = retire_pc[7:0];
-            4'hE: inspect_data = retire_ir[7:0];
             4'hF: inspect_data = {5'b00000, state};
             default: inspect_data = 8'h00;
         endcase

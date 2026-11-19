@@ -49,7 +49,7 @@ def main():
     results = []
     for tb_path in tb_files:
         sim_bin = BUILD_DIR / (tb_path.stem + ".vvp")
-        compile_cmd = ["iverilog", "-g2005", "-o", str(sim_bin)] + rtl_sources + [str(tb_path)]
+        compile_cmd = ["iverilog", "-g2005", "-s", tb_path.stem, "-o", str(sim_bin)] + rtl_sources + [str(tb_path)]
         r = run(compile_cmd)
         if r.returncode != 0:
             results.append((tb_path.name, "ERROR", f"compile failed:\n{r.stdout}{r.stderr}"))

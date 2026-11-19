@@ -7,7 +7,11 @@
 // retire_* are not debug decoration -- they are how your processor is
 // graded (Section 8.2). Get them right early.
 
-module dsd8_cpu (
+module dsd8_cpu #(
+    // The debugger qualifies io_ready as a dedicated execution hold.
+    // A standalone core treats io_ready as a peripheral handshake only.
+    parameter DEBUG_READY_GATE = 1'b0
+) (
     input  wire        clk,
     input  wire        rst_n,
 
@@ -68,7 +72,15 @@ module dsd8_cpu (
     wire [3:0]  alu_flags = {flag_z, flag_n, flag_c, flag_v};
 
     wire [3:0]  arch_flags;
-    wire [7:0]  dmem_rdata;
+    wire [7:0] dmem_raw;
+    reg [255:0] dmem_written;
+    wire [7:0] dmem_rdata = dmem_written[rf_rd1] ? dmem_raw : 8'h00;
+
+    // Logical zeroing on every reset without adding ports to data_memory.
+    always @(posedge clk) begin
+        if (!rst_n) dmem_written <= 256'b0;
+        else if (mem_we) dmem_written[rf_rd1] <= 1'b1;
+    end
 
     // ---- Program Counter ----
     prog_counter u_pc (
@@ -96,6 +108,8 @@ module dsd8_cpu (
         .io_dir (dec_io_dir)
     );
 
+    wire execute_ready = io_ready || (!DEBUG_READY_GATE && opcode != 4'hE);
+
     // ---- Control Unit ----
     control_unit u_cu (
         .clk      (clk),
@@ -103,7 +117,7 @@ module dsd8_cpu (
         .opcode   (opcode),
         .cond     ((opcode == 4'hE) ? {2'b00, dec_io_dir} : dec_cond),
         .flags    (arch_flags),
-        .io_ready (io_ready),
+        .io_ready (execute_ready),
         .pc_en    (pc_en),
         .pc_load  (pc_load),
         .rf_we    (rf_we),
@@ -169,7 +183,7 @@ module dsd8_cpu (
         .addr  (rf_rd1),
         .we    (mem_we),
         .wdata (rf_rd2),
-        .rdata (dmem_rdata)
+        .rdata (dmem_raw)
     );
 
     // ---- I/O Interface Outputs ----

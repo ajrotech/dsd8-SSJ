@@ -53,39 +53,38 @@ def run(cmd, **kwargs):
 
 
 def assemble_and_simulate_gold(asm_path, work_dir):
-    hex_path = work_dir / (asm_path.stem + ".hex")
-    gold_path = work_dir / (asm_path.stem + ".gold.trace")
+    hex_path = work_dir / "program.hex"
+    gold_path = work_dir / "gold.trace"
 
     r = run([sys.executable, str(TOOLS / "dsd8asm.py"), str(asm_path), "-o", str(hex_path)])
     if r.returncode != 0:
-        return None, None, f"assembler failed:\n{r.stdout}{r.stderr}"
+        return None, f"assembler failed:\n{r.stdout}{r.stderr}"
 
     r = run([sys.executable, str(TOOLS / "dsd8sim.py"), str(hex_path), "--trace", str(gold_path)])
     if r.returncode != 0:
-        return None, None, f"golden simulator failed:\n{r.stdout}{r.stderr}"
+        return None, f"golden simulator failed:\n{r.stdout}{r.stderr}"
 
-    return hex_path, gold_path, None
+    return gold_path, None
 
 
-def compile_and_simulate_dut(hex_path, work_dir, test_name):
-    dut_trace = work_dir / (test_name + ".dut.trace")
-    sim_bin = work_dir / (test_name + ".vvp")
+def compile_and_simulate_dut(work_dir):
+    dut_trace = work_dir / "dut.trace"
+    sim_bin = work_dir / "dsd8.vvp"
 
     sources = [str(RTL / f) for f in RTL_SOURCES] + [str(PERIPHERALS), str(TB)]
     for src in sources:
         if not pathlib.Path(src).exists():
             return None, f"missing source file: {src}"
 
-    compile_cmd = [
-        "iverilog", "-g2005", "-o", str(sim_bin),
-        f"-Ptb_dsd8.imem.IMAGE=\"{hex_path}\"",
-        f"-Ptb_dsd8.TRACE_FILE=\"{dut_trace}\"",
-    ] + sources
+    # Icarus does not reliably override a nested instance parameter with -P.
+    # Use the supplied harness defaults in an isolated folder per program.
+    compile_cmd = ["iverilog", "-g2005", "-s", "tb_dsd8", "-o", str(sim_bin)] + sources
     r = run(compile_cmd)
     if r.returncode != 0:
         return None, f"iverilog compile failed:\n{r.stdout}{r.stderr}"
 
-    r = run(["vvp", str(sim_bin)])
+    dut_trace.unlink(missing_ok=True)
+    r = run(["vvp", str(sim_bin)], cwd=work_dir)
     if r.returncode != 0:
         return None, f"vvp simulation failed:\n{r.stdout}{r.stderr}"
 
@@ -133,12 +132,14 @@ def main():
     for asm_path in asm_files:
         name = asm_path.stem
         try:
-            hex_path, gold_path, err = assemble_and_simulate_gold(asm_path, BUILD_DIR)
+            work_dir = BUILD_DIR / name
+            work_dir.mkdir(exist_ok=True)
+            gold_path, err = assemble_and_simulate_gold(asm_path, work_dir)
             if err:
                 results.append((name, "ERROR", err))
                 continue
 
-            dut_path, err = compile_and_simulate_dut(hex_path, BUILD_DIR, name)
+            dut_path, err = compile_and_simulate_dut(work_dir)
             if err:
                 results.append((name, "ERROR", err))
                 continue

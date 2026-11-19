@@ -17,5 +17,7 @@ if ! command -v verilator >/dev/null 2>&1; then
 fi
 
 echo "Linting rtl/*.v with: verilator --lint-only -Wall"
-verilator --lint-only -Wall --top-module dsd8_top rtl/*.v
+for top in dsd8_top dsd8_jtag_top; do
+    verilator --lint-only -Wall --timescale-override 1ns/1ps --top-module "$top" rtl/*.v
+done
 echo "lint: clean"

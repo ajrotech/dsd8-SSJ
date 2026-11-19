@@ -1,0 +1,8 @@
+// R6 observes reset data memory at address R0 (zero).
+2c00 // LD R6, [R0]
+12a5 // LDI R1, 0xA5
+3200 // ST [R0], R1
+e302 // OUT 0x02, R1
+e340 // OUT 0x40, R1
+e440 // IN R2, 0x40
+f000 // HLT

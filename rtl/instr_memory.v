@@ -12,7 +12,11 @@ module instr_memory #(
 
     reg [15:0] mem [0:511];
 
+    integer i;
     initial begin
+        for (i = 0; i < 512; i = i + 1) begin
+            mem[i] = 16'h0000;
+        end
         $readmemh(IMAGE, mem);
     end
 

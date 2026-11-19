@@ -83,8 +83,6 @@ module tb_debug;
     reg [15:0] dc_imem_data;
     reg        dc_cpu_halted;
     reg        dc_retire;
-    reg [8:0]  dc_retire_pc;
-    reg [15:0] dc_retire_ir;
     reg        dc_retire_rf_we;
     reg [2:0]  dc_retire_rf_addr;
     reg [7:0]  dc_retire_rf_data;
@@ -111,13 +109,13 @@ module tb_debug;
         .imem_data       (dc_imem_data),
         .cpu_halted      (dc_cpu_halted),
         .retire          (dc_retire),
-        .retire_pc       (dc_retire_pc),
-        .retire_ir       (dc_retire_ir),
         .retire_rf_we    (dc_retire_rf_we),
         .retire_rf_addr  (dc_retire_rf_addr),
         .retire_rf_data  (dc_retire_rf_data),
         .retire_flags    (dc_retire_flags),
         .bus_io_ready    (dc_bus_io_ready),
+        .io_pending      (1'b0),
+        .cpu_enable      (),
         .cpu_io_ready    (dc_cpu_io_ready),
         .debug_state     (dc_debug_state),
         .dbg_paused      (dc_dbg_paused),
@@ -160,8 +158,6 @@ module tb_debug;
         dc_imem_data = 16'h0000;
         dc_cpu_halted = 1'b0;
         dc_retire = 1'b0;
-        dc_retire_pc = 9'h000;
-        dc_retire_ir = 16'h0000;
         dc_retire_rf_we = 1'b0;
         dc_retire_rf_addr = 3'b000;
         dc_retire_rf_data = 8'h00;
@@ -171,6 +167,7 @@ module tb_debug;
 
         // Reset pulse
         repeat (4) @(posedge clk);
+        @(negedge clk);
         rst_n = 1'b1;
         @(posedge clk);
 
@@ -293,7 +290,6 @@ module tb_debug;
         // Simulate CPU completing instruction
         @(posedge clk);
         dc_retire <= 1'b1;
-        dc_retire_pc <= 9'h001;
         dc_retire_rf_we <= 1'b1;
         dc_retire_rf_addr <= 3'd2;
         dc_retire_rf_data <= 8'h42;
@@ -349,6 +345,12 @@ module tb_debug;
         @(posedge clk);
         dc_imem_addr <= 9'h00A;
         #1;
+        if (dc_cpu_io_ready !== 1'b0) begin
+            $display("  FAIL: breakpoint instruction was allowed to issue");
+            errors = errors + 1;
+        end
+        @(posedge clk);
+        #1;
         if (dc_debug_state !== 3'b100 || dc_dbg_bp_hit !== 1'b1 || dc_cpu_io_ready !== 1'b0) begin
             $display("  FAIL: expected BP_HIT state (state=4 bp_hit=1 cpu_io_ready=0), got state=%b hit=%b ready=%b",
                      dc_debug_state, dc_dbg_bp_hit, dc_cpu_io_ready);
@@ -373,7 +375,6 @@ module tb_debug;
         // Retire that instruction and change PC
         @(posedge clk);
         dc_retire <= 1'b1;
-        dc_retire_pc <= 9'h00A;
         dc_imem_addr <= 9'h00B;
         @(posedge clk);
         dc_retire <= 1'b0;

@@ -61,7 +61,8 @@ module io_bus (
     end
 
     assign io_rdata = is_periph ? periph_rdata : local_rdata;
-    assign io_ready = is_periph ? periph_ready : 1'b1;
+    // Non-I/O instructions have no request, regardless of their low byte.
+    assign io_ready = (is_periph && (io_rd || io_wr)) ? periph_ready : 1'b1;
 
     always @(posedge clk) begin
         if (!rst_n) begin
